@@ -1,0 +1,266 @@
+{
+    "Comment": "State Machine for the CertAlert system, will log all certificates in a DynamoDB, then log any expiring/expired certificates in Security Hub before sending an SNS email alert to the team in charge of certificate management.",
+    "StartAt": "Get Account Details",
+    "States": {
+      "Get Account Details": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "OutputPath": "$.Payload.body",
+        "Parameters": {
+          "Payload.$": "$",
+          "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:readAccount:$LATEST"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 10,
+            "MaxAttempts": 10,
+            "BackoffRate": 2
+          }
+        ],
+        "Next": "Parallel"
+      },
+      "Parallel": {
+        "Type": "Parallel",
+        "Next": "Send Alert",
+        "Branches": [
+          {
+            "StartAt": "Get Certificate Details",
+            "States": {
+              "Get Certificate Details": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "OutputPath": "$.Payload.body",
+                "Parameters": {
+                  "Payload.$": "$",
+                  "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:mockCerts:$LATEST"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException",
+                      "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 10,
+                    "MaxAttempts": 10,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "Process Certificates"
+              },
+              "Process Certificates": {
+                "Type": "Map",
+                "ItemProcessor": {
+                  "ProcessorConfig": {
+                    "Mode": "INLINE"
+                  },
+                  "StartAt": "Push Certs to Dynamo DB",
+                  "States": {
+                    "Push Certs to Dynamo DB": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "Payload.$": "$",
+                        "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:writeToDynamoDB:$LATEST"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.AWSLambdaException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException"
+                          ],
+                          "IntervalSeconds": 10,
+                          "MaxAttempts": 10,
+                          "BackoffRate": 2
+                        }
+                      ],
+                      "Next": "Log Expiring Certs in Security Hub",
+                      "ResultPath": null
+                    },
+                    "Log Expiring Certs in Security Hub": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "OutputPath": "$.Payload",
+                      "Parameters": {
+                        "Payload.$": "$",
+                        "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:writeToSecurityHub:$LATEST"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.AWSLambdaException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException"
+                          ],
+                          "IntervalSeconds": 10,
+                          "MaxAttempts": 10,
+                          "BackoffRate": 2
+                        }
+                      ],
+                      "End": true
+                    }
+                  }
+                },
+                "ResultPath": null,
+                "End": true
+              }
+            }
+          },
+          {
+            "StartAt": "Get Stack Details",
+            "States": {
+              "Get Stack Details": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "OutputPath": "$.Payload.body",
+                "Parameters": {
+                  "Payload.$": "$",
+                  "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:listStacks:$LATEST"
+                },
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "Lambda.ServiceException",
+                      "Lambda.AWSLambdaException",
+                      "Lambda.SdkClientException",
+                      "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                  }
+                ],
+                "Next": "Process Stacks"
+              },
+              "Process Stacks": {
+                "Type": "Map",
+                "ItemProcessor": {
+                  "ProcessorConfig": {
+                    "Mode": "INLINE"
+                  },
+                  "StartAt": "Get Stack Resources",
+                  "States": {
+                    "Get Stack Resources": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "Payload.$": "$",
+                        "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:findOrphanedResources:$LATEST"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.AWSLambdaException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException"
+                          ],
+                          "IntervalSeconds": 2,
+                          "MaxAttempts": 6,
+                          "BackoffRate": 2
+                        }
+                      ],
+                      "Next": "Process Stack Resources",
+                      "OutputPath": "$.Payload.body"
+                    },
+                    "Process Stack Resources": {
+                      "Type": "Map",
+                      "ItemProcessor": {
+                        "ProcessorConfig": {
+                          "Mode": "INLINE"
+                        },
+                        "StartAt": "Push Resource to DynamoDB",
+                        "States": {
+                          "Push Resource to DynamoDB": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Parameters": {
+                              "Payload.$": "$",
+                              "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:pushToDynamoDBOrphanedResources:$LATEST"
+                            },
+                            "Retry": [
+                              {
+                                "ErrorEquals": [
+                                  "Lambda.ServiceException",
+                                  "Lambda.AWSLambdaException",
+                                  "Lambda.SdkClientException",
+                                  "Lambda.TooManyRequestsException"
+                                ],
+                                "IntervalSeconds": 2,
+                                "MaxAttempts": 6,
+                                "BackoffRate": 2
+                              }
+                            ],
+                            "Next": "Log Orphaned Resources in Security Hub",
+                            "ResultPath": null
+                          },
+                          "Log Orphaned Resources in Security Hub": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "OutputPath": "$.Payload",
+                            "Parameters": {
+                              "Payload.$": "$",
+                              "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:writeOrphanedResourcesToSecuirtyHub:$LATEST"
+                            },
+                            "Retry": [
+                              {
+                                "ErrorEquals": [
+                                  "Lambda.ServiceException",
+                                  "Lambda.AWSLambdaException",
+                                  "Lambda.SdkClientException",
+                                  "Lambda.TooManyRequestsException"
+                                ],
+                                "IntervalSeconds": 2,
+                                "MaxAttempts": 6,
+                                "BackoffRate": 2
+                              }
+                            ],
+                            "End": true
+                          }
+                        }
+                      },
+                      "End": true
+                    }
+                  }
+                },
+                "End": true
+              }
+            }
+          }
+        ]
+      },
+      "Send Alert": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "OutputPath": "$.Payload",
+        "Parameters": {
+          "Payload.$": "$",
+          "FunctionName": "arn:aws:lambda:us-east-1:916507989922:function:sendAlert:$LATEST"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 10,
+            "MaxAttempts": 10,
+            "BackoffRate": 2
+          }
+        ],
+        "End": true
+      }
+    }
+  }
