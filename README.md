@@ -1,1 +1,2 @@
-# AWS-Cert-Alert
+AWS Cert Alert
+AWS Cert Alert is a certificate management system designed to automate and streamline the process of managing certificates, resources, and CloudFormation stacks within AWS accounts. The system utilizes a state machine with Lambda code to gather information about certificates in use, log expiring certificates in Security Hub, pass certificate details to a DynamoDB database, update a dashboard created with QuickSight Dashboard, and notify users of updates via email using Simple Notification Service.
