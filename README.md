@@ -10,4 +10,4 @@ To set up the system, simply follow these steps:
 7. Enable Security Hub.
 8. Access the sample dashboard at https://us-east-1.quicksight.aws.amazon.com/sn/accounts/916507989922/dashboards/a57c0d4a-b5e0-45ca-a07a-8855dead939f?directory_alias=certalertdashboard and click the save as button to generate a new analyses based on your data.
 
-You can view a video guide to setting up and using the system at https://youtu.be/rfPmh9j2EuQ and you can view the website for the project at showcase.itcarlow.ie
+You can view a video guide to setting up and using the system at https://youtu.be/rfPmh9j2EuQ and you can view the website for the project at https://showcase.itcarlow.ie/
